@@ -63,19 +63,6 @@ ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 LOGO_PATH  = ASSETS_DIR / "bicici_logo.png"
 ICON_PATH  = ASSETS_DIR / "bicici_icon.png"
 
-# ── Features (ordre d'entrainement J1S4) ─────────────────
-FEATURES = [
-    "person_income", "person_emp_length", "person_age",
-    "loan_amnt", "loan_int_rate", "loan_percent_income",
-    "cb_person_cred_hist_length",
-    "home_RENT", "home_MORTGAGE", "home_OWN",
-    "loan_intent_enc",
-    "debt_service_rate",       # loan_int_rate x loan_percent_income
-    "monthly_payment_proxy",   # loan_amnt / (income/12)
-    "log_income",              # log1p(person_income)
-    "high_risk_intent",        # flag DEBTCONS/MEDICAL
-]
-
 LOAN_INTENTS = [
     "PERSONAL", "EDUCATION", "MEDICAL",
     "VENTURE", "HOMEIMPROVEMENT", "DEBTCONSOLIDATION",
@@ -99,13 +86,14 @@ def load_explainer(_model, n_background=200):
     data/processed/*.parquet (donnees completes) est absent du repo (.gitignore).
     """
     try:
+        features = list(_model.feature_names_in_)
         root = Path(__file__).resolve().parent
         for p in [root / "data" / "processed" / "shap_background_sample.parquet",
                   root / "data" / "processed" / "credit_risk_kmeans.parquet",
                   root / "data" / "processed" / "credit_risk_clean.parquet"]:
             if p.exists():
                 df = pd.read_parquet(p)
-                feats = [f for f in FEATURES if f in df.columns]
+                feats = [f for f in features if f in df.columns]
                 X_bg = df[feats].sample(min(n_background, len(df)), random_state=42)
                 scaler = _model.named_steps["scaler"]
                 rf     = _model.named_steps["model"]
@@ -116,9 +104,16 @@ def load_explainer(_model, n_background=200):
 
 # ── build_features ─────────────────────────────────────────
 def build_features(income, loan_amnt, loan_int_rate, home,
-                   intent, emp_length, default_hist, age, cred_hist):
-    """Transforme les inputs sidebar en vecteur compatible avec le pipeline J1S4."""
+                   intent, emp_length, default_hist, age, cred_hist, features):
+    """Transforme les inputs sidebar en vecteur compatible avec le pipeline J1S4.
+
+    `features` = model.feature_names_in_ (source de verite) : le reindex
+    elimine silencieusement toute colonne construite ici mais absente du fit
+    (ex. l'ancien "default_enc", jamais vu a l'entrainement), au lieu de
+    lever "feature names unseen at fit time".
+    """
     lpi = loan_amnt / income if income > 0 else 0.0
+    intent_categories = sorted(LOAN_INTENTS)  # ordre du LabelEncoder (alphabetique) a l'entrainement
     return pd.DataFrame([{
         "person_income":              income,
         "person_emp_length":          emp_length,
@@ -130,12 +125,12 @@ def build_features(income, loan_amnt, loan_int_rate, home,
         "home_RENT":     1 if home == "RENT"     else 0,
         "home_MORTGAGE": 1 if home == "MORTGAGE" else 0,
         "home_OWN":      1 if home == "OWN"      else 0,
-        "loan_intent_enc":      LOAN_INTENTS.index(intent) if intent in LOAN_INTENTS else 0,
+        "loan_intent_enc":      intent_categories.index(intent) if intent in intent_categories else 0,
         "debt_service_rate":          loan_int_rate * lpi,
         "monthly_payment_proxy":      loan_amnt / (income / 12) if income > 0 else 0.0,
         "log_income":                 np.log1p(income),
         "high_risk_intent":           1 if intent in ("DEBTCONSOLIDATION", "MEDICAL") else 0,
-    }])[FEATURES]
+    }]).reindex(columns=features, fill_value=0)
 
 # ── SHAP values (compat multi-versions shap) ───────────────
 def get_shap_values(explainer, scaler, X_input):
@@ -340,7 +335,8 @@ with st.sidebar:
 
 # ── SCORING ──────────────────────────────────────────────
 X_input  = build_features(income, loan_amnt, loan_int_rate, home,
-                           intent, emp_length, default_hist, age, cred_hist)
+                           intent, emp_length, default_hist, age, cred_hist,
+                           features=list(model.feature_names_in_))
 proba    = model.predict_proba(X_input)[0, 1]
 decision = proba >= threshold
 lpi      = loan_amnt / income if income > 0 else 0.0
