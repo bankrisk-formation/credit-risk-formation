@@ -37,3 +37,6 @@ __pycache__/
 Thumbs.db
 *.pkl
 *.joblib
+
+# Echantillon leger requis par app_v2.py (SHAP) en deploiement distant
+!data/processed/shap_background_sample.parquet

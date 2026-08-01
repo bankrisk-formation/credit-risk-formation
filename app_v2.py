@@ -69,7 +69,7 @@ FEATURES = [
     "loan_amnt", "loan_int_rate", "loan_percent_income",
     "cb_person_cred_hist_length",
     "home_RENT", "home_MORTGAGE", "home_OWN",
-    "default_enc", "loan_intent_enc",
+    "loan_intent_enc",
     "debt_service_rate",       # loan_int_rate x loan_percent_income
     "monthly_payment_proxy",   # loan_amnt / (income/12)
     "log_income",              # log1p(person_income)
@@ -130,7 +130,6 @@ def build_features(income, loan_amnt, loan_int_rate, home,
         "home_RENT":     1 if home == "RENT"     else 0,
         "home_MORTGAGE": 1 if home == "MORTGAGE" else 0,
         "home_OWN":      1 if home == "OWN"      else 0,
-        "default_enc":          1 if default_hist == "Y" else 0,
         "loan_intent_enc":      LOAN_INTENTS.index(intent) if intent in LOAN_INTENTS else 0,
         "debt_service_rate":          loan_int_rate * lpi,
         "monthly_payment_proxy":      loan_amnt / (income / 12) if income > 0 else 0.0,
